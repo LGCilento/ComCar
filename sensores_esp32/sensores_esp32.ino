@@ -169,15 +169,28 @@ void processAccGir() {
  * Read HMC
  */
 void readHMC(){
+  byte measureReady = 0;
+  Wire.beginTransmission(0b0001101);
+  Wire.write(0x06);
+  while(Wire.endTransmission(false));
+  while(!measureReady){
+    Wire.requestFrom(0b0001101, 1);
+    measureReady = Wire.read();
+  }
+
+  Wire.beginTransmission(0b0001101);
+  Wire.write(0x00);
+  while(Wire.endTransmission(false));
   //Read the data.. 2 bytes for each axis
   Wire.requestFrom(0b0001101, 6);
   
-  magX = Wire.read()<<8; //MSB  x 
-  magX |= Wire.read(); //LSB  x
-  magZ = Wire.read()<<8; //MSB  z
-  magZ |= Wire.read(); //LSB z
-  magY = Wire.read()<<8; //MSB y
-  magY |= Wire.read(); //LSB y
+  magX = Wire.read(); //LSB x
+  magX |= (int)Wire.read()<<8; //MSB x 
+  magY = Wire.read(); //LSB y
+  magY |= (int)Wire.read()<<8; //MSB y
+  magZ = Wire.read(); //LSB z
+  magZ |= (int)Wire.read()<<8; //MSB z
+  
 }
 /*=======================================================================================================================================
   ||                                                                                                                                   ||
