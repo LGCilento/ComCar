@@ -29,20 +29,16 @@ const int MPU = 0x68;
 char k = 0;
 int acidente = 0;
 
-SemaphoreHandle_t xSemaphoreI2c, xSemaphoreRotation;
+uint8_t i = 0;
+char buff[50];
 
 void setup() {
-  
-  /* Create mutex type semaphore. */
-  xSemaphoreI2c = xSemaphoreCreateMutex();
-  xSemaphoreRotation = xSemaphoreCreateMutex();
-
-  if( xSemaphoreI2c != NULL && xSemaphoreRotation != NULL )
-  {
-    /* The semaphore was created successfully and
-    can be used. */
-    Serial.begin(9600);
+  Serial.begin(115200);
+  pinMode(leftEncoder,INPUT);
+  pinMode(rightEncoder,INPUT);
     Wire.begin();
+    setupMPU(); // Chamada de configuração do MPU6050  ACC-GIR
+  setupHMC_continous();
     
     WiFi.begin(ssid, password);
   
@@ -50,53 +46,43 @@ void setup() {
     while (WiFi.status() != WL_CONNECTED) {
       Serial.print(".");
       // wait 10 miliseconds for re-trying
-      delay(10);
+      delay(50);
     }
 
-    //  lcd.setBacklightPin(3,POSITIVE);
-    //  lcd.setBacklight(HIGH); // NOTE: You can turn the backlight off by setting it to LOW instead of HIGH
-    //  lcd.begin(16, 2);
-    //  lcd.clear();
+      lcd.setBacklightPin(3,POSITIVE);
+      lcd.setBacklight(HIGH); // NOTE: You can turn the backlight off by setting it to LOW instead of HIGH
+      lcd.begin(16, 2);
+      lcd.clear();
 
-    xTaskCreate(
-                  i2cSensorsTask,       /* Task function. */
-                  "i2cSensorsTask",     /* String with name of task. */
-                  10000,             /* Stack size in words. */
-                  NULL,              /* Parameter passed as input of the task */
-                  1,                 /* Priority of the task. */
-                  NULL);             /* Task handle. */
-
-    xTaskCreate(
-                  rotationCounterTask,       /* Task function. */
-                  "rotationCounterTask",     /* String with name of task. */
-                  10000,             /* Stack size in words. */
-                  NULL,              /* Parameter passed as input of the task */
-                  2,                 /* Priority of the task. */
-                  NULL);             /* Task handle. */
-
-    xTaskCreate(
-                  communicationTask,       /* Task function. */
-                  "communicationTask",     /* String with name of task. */
-                  10000,             /* Stack size in words. */
-                  NULL,              /* Parameter passed as input of the task */
-                  2,                 /* Priority of the task. */
-                  NULL);             /* Task handle. */
-               
-    vTaskStartScheduler();
-    
-  }
-
+  leftTurns = 0;
+  rightTurns = 0;
 }
 
 void loop() {
-  
-}
+  unsigned long tempo;
+  int leftEnc, rightEnc;
 
-void communicationTask( void *parameter ) {
-//  printLCD();
-  delay(100);
-  uint8_t i = 0;
-  char buff[50];
+  if (!acidente) {
+    acelerometro_giroscopio(); //Obtém valores do Acc, Gir e Tmp
+    readHMC();
+    // acidente_acelerometro();  //Detecta acidente a partir do Acc, Gir e Tmp
+  }
+
+  tempo = millis();
+  while(millis()-tempo < 100){
+    leftEnc = digitalRead(leftEncoder);
+    rightEnc = digitalRead(rightEncoder);
+    
+    if(leftEnc==HIGH && rightEnc==HIGH){
+      leftTurns++;
+      rightTurns++;
+    } else if(leftEnc==HIGH){
+      leftTurns++;
+    } else if(rightEnc==HIGH){
+      rightTurns++;
+    }
+  }
+    
   if (!client.connect(server, port)){
     Serial.println("Connection failed!");
   }
@@ -106,77 +92,15 @@ void communicationTask( void *parameter ) {
       
     }
     else{
-      float ax, ay, az, orientacao;
-      int velL, velR;
-      
-      while( xSemaphoreTake( xSemaphoreI2c, ( TickType_t ) 10 ) != pdTRUE );
-      //Obter medidas de aceleracao e orientacao atuais
-      ax = AcX;
-      ay = AcY;
-      az = AcZ;
-      orientacao = bearing;
-      
-      xSemaphoreGive( xSemaphoreI2c );
-      while( xSemaphoreTake( xSemaphoreRotation, ( TickType_t ) 10 ) != pdTRUE );
-      //Obter giros dos encoders atuais
-      velL = leftTurns;
-      velR = rightTurns;
-      leftTurns = 0;
-      rightTurns = 0;
-      
-      xSemaphoreGive( xSemaphoreRotation );
-
-      velL = velL/2;
-      velR = velR/2;
-      sprintf(buff,"COM-0001N%2.2f%2.2f%2.2f%3.1f%d%d",ax,ay,az,orientacao,velL,velR);
-
-//      buff[29]='\0';
-      
+      sprintf(buff,"COM-0001N%2.2f%2.2f%2.2f%3.1f%d%d",AcX,AcY,AcZ,bearing,leftTurns/2,rightTurns/2);
       client.write(buff);
       Serial.println(buff);
-    }
-  }
-//  delay(50);
-  
-}
 
-// Thread leitura de sensores I2C
-void i2cSensorsTask(void * parameter ){
-  setupMPU(); // Chamada de configuração do MPU6050  ACC-GIR
-  setupHMC_continous();
-  
-  while(true){
-    if (!acidente) {
-      while( xSemaphoreTake( xSemaphoreI2c, ( TickType_t ) 10 ) != pdTRUE );
-      acelerometro_giroscopio(); //Obtém valores do Acc, Gir e Tmp
-      readHMC();
-      xSemaphoreGive( xSemaphoreI2c );
-//      acidente_acelerometro();  //Detecta acidente a partir do Acc, Gir e Tmp
+      leftTurns = 0;
+      rightTurns = 0;
+      delay(50);
+      client.stop();
     }
-  }
-}
-
-// Thread contagem de giros
-void rotationCounterTask(void * parameter ){
-  int leftEnc, rightEnc;
-  leftTurns = 0; rightTurns = 0;
-  pinMode(leftEncoder,INPUT);
-  pinMode(rightEncoder,INPUT);
-  
-  while(true){
-    leftEnc = digitalRead(leftEncoder);
-    rightEnc = digitalRead(rightEncoder);
-
-    while( xSemaphoreTake( xSemaphoreRotation, ( TickType_t ) 10 ) != pdTRUE );
-    if(leftEnc==HIGH && rightEnc==HIGH){
-      leftTurns++;
-      rightTurns++;
-    } else if(leftEnc==HIGH){
-      leftTurns++;
-    } else if(rightEnc==HIGH){
-      rightTurns++;
-    }
-    xSemaphoreGive( xSemaphoreRotation );
   }
 }
 
