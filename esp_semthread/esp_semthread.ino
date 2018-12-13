@@ -27,13 +27,14 @@ float bearing;
 int leftTurns, rightTurns;
 const int MPU = 0x68;
 char k = 0;
-int acidente = 0;
+int acidente = 0, acidente_rec = 0;
 
 uint8_t i = 0;
-char buff[50];
+char buff[50], buff2[50];
 
 void setup() {
   Serial.begin(115200);
+  delay(50);
   pinMode(leftEncoder,INPUT);
   pinMode(rightEncoder,INPUT);
     Wire.begin();
@@ -88,19 +89,41 @@ void loop() {
   }
   else {
     Serial.println("Connected to server!");
-    if(acidente){
-      
-    }
-    else{
-      sprintf(buff,"COM-0001N%2.2f%2.2f%2.2f%3.1f%d%d",AcX,AcY,AcZ,bearing,leftTurns/2,rightTurns/2);
-      client.write(buff);
-      Serial.println(buff);
+//    if(acidente){
+//      
+//    }
+//    else{
+      sprintf(buff2,"COM-0002N%2.2f_%2.2f_%2.2f_%3.1f_%d_%d",AcX,AcY,AcZ,bearing,leftTurns/2,rightTurns/2);
+      client.write(buff2);
+      Serial.println(buff2);
+//      client.write("BRA2018TESTE01");
 
       leftTurns = 0;
       rightTurns = 0;
       delay(50);
+
+      while (client.available()) {
+        if(i == 9){
+           if(buff[8]=='H'){
+              acidente_rec = 1;
+           }
+        } else if(i == 16){
+           Serial.print(buff);
+           lcd.setCursor(0,0);
+           lcd.print(buff);
+        } else if(i == 32){
+          Serial.println(buff);
+          lcd.setCursor(0,1);
+          lcd.print(buff);
+        }
+        char c = client.read();
+        buff[i%16] = c;
+        i++;
+      }
+      i=0;
+      buff[0]='\0';
+      
       client.stop();
-    }
   }
 }
 
